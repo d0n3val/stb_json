@@ -1,0 +1,6 @@
+# Configuration for the tup build system
+include_rules
+
+: foreach *.c |> !compile |>
+: *.o |> !link |> $(EXEC)
+

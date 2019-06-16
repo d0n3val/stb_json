@@ -1,0 +1,28 @@
+# Global Tupfile include 
+
+# Executable name
+EXEC = test
+
+# Compiler to use (gcc/clang/cl)
+COMPILER = clang
+
+# Global compiler flags
+CFLAGS += -I$(TUP_CWD)
+CFLAGS += -Wall
+CFLAGS += -march=x86-64
+
+ifeq (@(DEBUG),y)
+	CFLAGS += -O0
+	CFLAGS += -g
+else
+	ifeq (@(FINAL),y)
+		CFLAGS += -Ofast
+	else
+		CFLAGS += -O2
+	endif
+endif
+
+# Macros
+!compile = |> $(COMPILER) $(CFLAGS) -c %f -o %o |> %B.o
+!link = |> $(COMPILER) %f $(CFLAGS) -o %o |>
+
