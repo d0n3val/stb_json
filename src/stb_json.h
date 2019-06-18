@@ -161,20 +161,20 @@ STBJDEF const char* stbj_get_last_error();
 
 
 #ifdef _MSC_VER
-typedef unsigned short stbj__uint16;
-typedef signed short stbj__int16;
-typedef unsigned int   stbj__uint32;
-typedef signed int   stbj__int32;
+typedef unsigned short  stbj_uint16;
+typedef signed short    stbj_int16;
+typedef unsigned int    stbj_uint32;
+typedef signed int      stbj_int32;
 #else
 #include <stdint.h>
-typedef uint16_t stbj__uint16;
-typedef int16_t  stbj__int16;
-typedef uint32_t stbj__uint32;
-typedef int32_t  stbj__int32;
+typedef uint16_t stbj_uint16;
+typedef int16_t  stbj_int16;
+typedef uint32_t stbj_uint32;
+typedef int32_t  stbj_int32;
 #endif
 
 // should produce compiler error if size is wrong
-typedef unsigned char validate_uint32[sizeof(stbj__uint32)==4 ? 1 : -1];
+typedef unsigned char validate_uint32[sizeof(stbj_uint32)==4 ? 1 : -1];
 
 #ifdef _MSC_VER
 #define STBJ_NOTUSED(v)  (void)(v)
@@ -234,6 +234,29 @@ typedef struct
 ///////////////////////////////////////////////
 //
 //  internal helper functions
+
+/*
+stbj_inline static int stbj_atoi(const char* string, int default_value)
+{
+    STBJ_ASSERT(string);
+
+    int ret = 0;
+    int is_negative = 0;
+
+    if((is_negative = *string == '-') || *string == '+')
+        ++string;
+
+    while(*string)
+    {
+        int digit = *string++ - '0';
+        if(digit > 9)
+            break;
+        ret = (10*ret) + digit;
+    }
+
+    return (is_negative) ? -ret : ret;
+}
+*/
 
 stbj_inline static const char* find_next(const stbj_context* context, char c, const char* cursor)
 {
@@ -309,34 +332,262 @@ STBJDEF int stbj_count_elements(stbj_context* context)
 
     int result = 0;
     int between_comas = 0;
+    char stack[256];
+    int stack_index = -1;
     char delimiter = (context->current_env == STBJ_ARRAY) ? ']' : '}';
 
     const char* cursor = context->cursor;
     int max_len = context->len - (int)(cursor - context->buffer);
 
-    while(max_len-- > 0) 
+    while(max_len-- > 0 && *++cursor && stack_index < 256) 
     {
-        // Advance to next interesting char
-        while(*cursor && *cursor != delimiter && *cursor != ',' && *cursor != '"') ++cursor;
-        if(between_comas && *cursor++ == '"')
-            between_comas = 0;
-        else
-            switch(*cursor++)
+        // Two different logics if we are in a nested array/object or not
+        if(stack_index < 0)
+        {
+            // we are on the same array/object level
+            switch(*cursor)
             {
-                case ']': case '}': return ++result;
-                case ',': ++result; break;
-                case '"': between_comas = 1; break;
-                default: break;
+                case '[': case '{': stack[++stack_index] = *cursor; break;
+                case ']': case '}': if(!between_comas && *cursor == delimiter) return ++result; break;
+                case ',': result += !between_comas; break;
+                case '"': between_comas = !between_comas; break;
             }
+        }
+        else
+        {
+            // we are in a nested array/object, keep consuming chars and record progress in out stack
+            switch(*cursor)
+            {
+                case '[': case '{': stack[++stack_index] = *cursor; break;
+                case ']': if(stack[stack_index] == '[') --stack_index; else return -1; break;
+                case '}': if(stack[stack_index] == '{') --stack_index; else return -1; break;
+            }
+        }
     }
 
-    // abnormal error quit, we never found a ']'
+    // abnormal error quit, "[] or {} mismatch"
     return -1;
 }
 
-STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
+// Return a pointer to the place in the buffer that a certain element exist
+STBJDEF const char* stbj_get_element(stbj_context* context, int index)
 {
-    return default_value;
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->current_env != STBJ_ERROR);
+    STBJ_ASSERT(index >= 0);
+
+    int result = 0;
+    int between_comas = 0;
+    char stack[256];
+    int stack_index = -1;
+    char delimiter = (context->current_env == STBJ_ARRAY) ? ']' : '}';
+
+    const char* cursor = context->cursor;
+    int max_len = context->len - (int)(cursor - context->buffer);
+
+    while(max_len-- > 0 && *++cursor && stack_index < 256) 
+    {
+        if(result == index)
+            return cursor;
+
+        // Two different logics if we are in a nested array/object or not
+        if(stack_index < 0)
+        {
+            // we are on the same array/object level
+            switch(*cursor)
+            {
+                case '[': case '{': stack[++stack_index] = *cursor; break;
+                case ']': case '}': if(!between_comas && *cursor == delimiter) return NULL; break;
+                case ',': result += !between_comas; break;
+                case '"': between_comas = !between_comas; break;
+            }
+        }
+        else
+        {
+            // we are in a nested array/object, keep consuming chars and record progress in out stack
+            switch(*cursor)
+            {
+                case '[': case '{': stack[++stack_index] = *cursor; break;
+                case ']': if(stack[stack_index] == '[') --stack_index; else return NULL; break;
+                case '}': if(stack[stack_index] == '{') --stack_index; else return NULL; break;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+STBJDEF stbj_int32 stbj_readp_int(stbj_context* context, int index, stbj_int32 default_value)
+{
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->current_env != STBJ_ERROR);
+    STBJ_ASSERT(index >= 0);
+
+    const char* cursor = stbj_get_element(context, index);
+    int sign = 1;
+    int result = 0;
+    int have_result = 0;
+
+    if(cursor != NULL)
+    {
+        int max_len = context->len - (int)(cursor - context->buffer);
+        int between_comas = 0;
+        int finish = 0;
+
+        // if object just consume chars until ':'
+        if(context->current_env == STBJ_OBJECT)
+            while(max_len-- > 0 && *cursor && *cursor++ != ':');
+
+        // iterate chars, embedding the logic for atoi()
+        while(max_len-- > 0 && *cursor && !finish) 
+        { 
+            switch(*cursor)
+            {
+                case ' ': break;
+                case '"': 
+                    if(between_comas++) finish = 1;
+                    break;
+                case '+': 
+                    if(have_result) finish = 1;
+                    break;
+                case '-': 
+                    if(have_result || sign == -1) finish = 1;
+                    else sign = -1; 
+                    break;
+                case '0': case '1': case '2': case '3': case '4':
+                case '5': case '6': case '7': case '8': case '9': 
+                    result = (10 * result) + (*cursor - '0'); have_result = 1;
+                    break;
+                default: 
+                    finish = 1;
+                    break;
+            }
+            ++cursor;
+        }
+    }
+
+    return (have_result) ? result * sign : default_value; 
+}
+
+STBJDEF double stbj_readp_float(stbj_context* context, int index, double default_value)
+{
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->current_env != STBJ_ERROR);
+    STBJ_ASSERT(index >= 0);
+
+    const char* cursor = stbj_get_element(context, index);
+    double sign = 1.0;
+    double result = 0.0;
+    int have_result = 0;
+    double decimal = 1.0;
+    int past_dot = 0;
+
+    if(cursor != NULL)
+    {
+        int max_len = context->len - (int)(cursor - context->buffer);
+        int between_comas = 0;
+        int finish = 0;
+
+        // if object just consume chars until ':'
+        if(context->current_env == STBJ_OBJECT)
+            while(max_len-- > 0 && *cursor && *cursor++ != ':');
+
+        // iterate chars, embedding the logic for atof()
+        while(max_len-- > 0 && *cursor && !finish) 
+        { 
+            switch(*cursor)
+            {
+                case ' ': break;
+                case '"': 
+                    if(between_comas++) finish = 1;
+                    break;
+                case '+': 
+                    if(have_result) finish = 1;
+                    break;
+                case '-': 
+                    if(have_result || sign == -1.0) finish = 1;
+                    else sign = -1.0; 
+                    break;
+                case '.':
+                    if(!past_dot) past_dot = 1;
+                    else finish = 1;
+                    break;
+                case '0': case '1': case '2': case '3': case '4':
+                case '5': case '6': case '7': case '8': case '9': 
+                    have_result = 1;
+                    result = (10 * result) + (*cursor - '0');
+                    if(past_dot) decimal *= 10.0;
+                    break;
+                default: 
+                    finish = 1;
+                    break;
+            }
+            ++cursor;
+        }
+    }
+
+    return (have_result) ? ((result/decimal) * sign) : default_value; 
+}
+
+
+STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, int buffer_size, const char* default_value)
+{
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->current_env != STBJ_ERROR);
+    STBJ_ASSERT(index >= 0);
+    STBJ_ASSERT(buffer);
+    STBJ_ASSERT(buffer_size > 0);
+
+    const char* cursor = stbj_get_element(context, index);
+    int buffer_index = 0;
+    int consuming_spaces = 1;
+    int between_comas = 0;
+
+    if(cursor != NULL)
+    {
+        int max_len = context->len - (int)(cursor - context->buffer);
+        int finish = 0;
+
+        // if object just consume chars until ':'
+        if(context->current_env == STBJ_OBJECT)
+            while(max_len-- > 0 && *cursor && *cursor++ != ':');
+
+        // iterate chars, embedding the logic for atoi()
+        while(max_len-- > 0 && *cursor && buffer_index < (buffer_size-1) && !finish) 
+        { 
+            switch(*cursor)
+            {
+                case ' ': 
+                    if(between_comas || !consuming_spaces) buffer[buffer_index++] = *cursor; 
+                    break;
+                case '"': 
+                    if(between_comas++ || !consuming_spaces) finish = 1;
+                    break;
+                case ']': case '}': case ',':
+                    if(!between_comas) finish = 1;
+                    break;
+                default: 
+                    consuming_spaces = 0;
+                    buffer[buffer_index++] = *cursor;
+                    break;
+            }
+            ++cursor;
+        }
+    }
+
+    // if we did not wrote anything, strcpy default value int buf
+    if(buffer_index == 0 && default_value != NULL)
+        while((buffer[buffer_index++] = *default_value++) && buffer_index < (buffer_size-1));
+    else if(!between_comas)
+        while(buffer[buffer_index-1] == ' ' && buffer_index-- > 0); // trim last spaces if no commans used
+
+    buffer[buffer_index] = 0;
+
+    return buffer_index; 
 }
 
 STBJDEF int stbj_read(stbj_context* context, const char* tag_name, char* buffer, int buffer_size)

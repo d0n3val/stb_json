@@ -7,9 +7,9 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +338 stb_json.h
+badd +580 stb_json.h
 badd +1 main.c
-badd +18 test.c
+badd +40 test.c
 argglobal
 silent! argdel *
 $argadd stb_json.h
@@ -30,11 +30,11 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
-exe 'vert 1resize ' . ((&columns * 111 + 94) / 189)
-exe '2resize ' . ((&lines * 37 + 26) / 53)
-exe 'vert 2resize ' . ((&columns * 77 + 94) / 189)
-exe '3resize ' . ((&lines * 13 + 26) / 53)
-exe 'vert 3resize ' . ((&columns * 77 + 94) / 189)
+exe 'vert 1resize ' . ((&columns * 138 + 127) / 255)
+exe '2resize ' . ((&lines * 31 + 26) / 53)
+exe 'vert 2resize ' . ((&columns * 116 + 127) / 255)
+exe '3resize ' . ((&lines * 19 + 26) / 53)
+exe 'vert 3resize ' . ((&columns * 116 + 127) / 255)
 argglobal
 setlocal fdm=manual
 setlocal fde=0
@@ -45,12 +45,12 @@ setlocal fml=1
 setlocal fdn=20
 setlocal fen
 silent! normal! zE
-let s:l = 344 - ((31 * winheight(0) + 25) / 51)
+let s:l = 586 - ((36 * winheight(0) + 25) / 51)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-344
-normal! 0
+586
+normal! 035|
 wincmd w
 argglobal
 if bufexists('test.c') | buffer test.c | else | edit test.c | endif
@@ -63,12 +63,12 @@ setlocal fml=1
 setlocal fdn=20
 setlocal fen
 silent! normal! zE
-let s:l = 50 - ((31 * winheight(0) + 18) / 37)
+let s:l = 7 - ((6 * winheight(0) + 15) / 31)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-50
-normal! 05|
+7
+normal! 073|
 wincmd w
 argglobal
 enew
@@ -82,11 +82,11 @@ setlocal fdn=20
 setlocal fen
 wincmd w
 2wincmd w
-exe 'vert 1resize ' . ((&columns * 111 + 94) / 189)
-exe '2resize ' . ((&lines * 37 + 26) / 53)
-exe 'vert 2resize ' . ((&columns * 77 + 94) / 189)
-exe '3resize ' . ((&lines * 13 + 26) / 53)
-exe 'vert 3resize ' . ((&columns * 77 + 94) / 189)
+exe 'vert 1resize ' . ((&columns * 138 + 127) / 255)
+exe '2resize ' . ((&lines * 31 + 26) / 53)
+exe 'vert 2resize ' . ((&columns * 116 + 127) / 255)
+exe '3resize ' . ((&lines * 19 + 26) / 53)
+exe 'vert 3resize ' . ((&columns * 116 + 127) / 255)
 tabnext 1
 if exists('s:wipebuf') && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
   silent exe 'bwipe ' . s:wipebuf
