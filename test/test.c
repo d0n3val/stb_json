@@ -2,7 +2,7 @@
 #include <string.h>
 
 #define STB_JSON_IMPLEMENTATION
-#include "stb_json.h"
+#include "../src/stb_json.h"
 
 char buffer1[] = "{\"name\": \"  John the Great\", \"last name\" : a e o  u   , \"age\":31  , \"height\": \"  -345.1234567\", \"eye colors\": [\"green\",\"blue\"] }";
 char buffer2[] = "[0,1,2,3]";

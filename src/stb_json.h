@@ -1,4 +1,4 @@
-/* stb_json - v0.1 - public domain json parser - http://d0n3val.github.org
+/* stb_json - v0.2 - public domain json parser - http://d0n3val.github.org
                                   no warranty implied; use at your own risk
 
    Do this:
@@ -13,8 +13,8 @@
    #include "stb_json.h"
 
    You can #define STBI_ASSERT(x) before the #include to avoid using assert.h.
-   And #define STBI_MALLOC, STBI_REALLOC, and STBI_FREE to avoid using malloc,realloc,free
-
+   This lib has zero dependencies, even with standard libraries. It does not
+   allocate any memory in the heap.
 
    QUICK NOTES:
       Primarily of interest to deploy a non-intrusive json parser
@@ -29,9 +29,9 @@ LICENSE
 RECENT REVISION HISTORY:
 
       0.1  (2019-06-15) Basic parsing
+      0.2  (2019-06-27) Parse of other arrays / objects
 
    See end of file for full revision history.
-
 
  ============================    Contributors    =========================
 
@@ -57,6 +57,11 @@ RECENT REVISION HISTORY:
 //    stbj_cursor* cursor = stbj_load(buffer, buffer_size);
 //    ...
 //    stbj_free(cursor);
+//
+// TODO ======================================================================
+//
+// Understant null / true / false
+// Benchmark the lib against others
 //
 // ===========================================================================
 //
@@ -164,6 +169,8 @@ STBJDEF const char* stbj_get_last_error(const stbj_context* context)
         case 4: return "JSON parse error, [] mismatch";
         case 5: return "JSON parse error, {} mismatch";
         case 6: return "Context must be of type Object";
+        case 7: return "JSON error parsing string to number";
+        case 8: return "JSON error parsing to string";
         default: return "Unknown error";
     }
 }
@@ -325,13 +332,12 @@ STBJDEF int stbj_find_element(stbj_context* context, const char* name)
     int between_comas = 0;
     char stack[256];
     int stack_index = -1;
-    int found = 0;
 
     const char* cursor = context->cursor;
     const char* compare_cursor = name;
     unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
 
-    while(max_len-- > 0 && *++cursor && stack_index < 256 && found == 0) 
+    while(max_len-- > 0 && *++cursor && stack_index < 256) 
     {
         // Two different logics if we are in a nested array/object or not
         if(stack_index < 0)
@@ -370,6 +376,7 @@ STBJDEF int stbj_find_element(stbj_context* context, const char* name)
         }
     }
 
+    context->error = 2;
     return -1;
 }
 
@@ -387,6 +394,7 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
 
     if(cursor != NULL)
     {
+        context->error = 0;
         unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
         int between_comas = 0;
         int finish = 0;
@@ -402,13 +410,13 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
             {
                 case ' ': break;
                 case '"': 
-                    if(between_comas++) finish = 1;
+                    if(between_comas++) { context->error = 7; finish = 1; }
                     break;
                 case '+': 
-                    if(have_result) finish = 1;
+                    if(have_result) { context->error = 7; finish = 1; }
                     break;
                 case '-': 
-                    if(have_result || sign == -1) finish = 1;
+                    if(have_result || sign == -1) { context->error = 7; finish = 1; }
                     else sign = -1; 
                     break;
                 case '0': case '1': case '2': case '3': case '4':
@@ -417,6 +425,7 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
                     break;
                 default: 
                     finish = 1;
+                    context->error = 7;
                     break;
             }
             ++cursor;
@@ -453,12 +462,13 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
 
     if(cursor != NULL)
     {
+        context->error = 0;
         unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
         int between_comas = 0;
         int finish = 0;
 
         // if object just consume chars until ':'
-        if(context->context == STBJ_OBJECT)
+        if(context->error == STBJ_OBJECT)
             while(max_len-- > 0 && *cursor && *cursor++ != ':');
 
         // iterate chars, embedding the logic for atof()
@@ -468,18 +478,18 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
             {
                 case ' ': break;
                 case '"': 
-                    if(between_comas++) finish = 1;
+                    if(between_comas++) { context->error = 7; finish = 1; }
                     break;
                 case '+': 
-                    if(have_result) finish = 1;
+                    if(have_result) { context->error = 7; finish = 1; }
                     break;
                 case '-': 
-                    if(have_result || sign == -1.0) finish = 1;
+                    if(have_result || sign == -1.0) { context->error = 7; finish = 1; }
                     else sign = -1.0; 
                     break;
                 case '.':
                     if(!past_dot) past_dot = 1;
-                    else finish = 1;
+                    else { context->error = 7; finish = 1; }
                     break;
                 case '0': case '1': case '2': case '3': case '4':
                 case '5': case '6': case '7': case '8': case '9': 
@@ -488,7 +498,8 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
                     if(past_dot) decimal *= 10.0;
                     break;
                 default: 
-                    finish = 1;
+                    context->error = 7; 
+                        finish = 1;
                     break;
             }
             ++cursor;
@@ -525,6 +536,7 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
 
     if(cursor != NULL)
     {
+        context->error = 0;
         unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
         int finish = 0;
 
@@ -541,10 +553,10 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
                     if(between_comas || !consuming_spaces) buffer[buffer_index++] = *cursor; 
                     break;
                 case '"': 
-                    if(between_comas++ || !consuming_spaces) finish = 1;
+                    if(between_comas++ || !consuming_spaces) { context->error = 8; finish = 1; }
                     break;
                 case '[': case '{': case ']': case '}': case ',':
-                    if(!between_comas) finish = 1;
+                    if(!between_comas) {context->error = 8; finish = 1; }
                     break;
                 default: 
                     consuming_spaces = 0;
@@ -652,8 +664,12 @@ STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
 
 /*
    revision history:
-      0.10    (2019-07-20)
-              first released version
+      0.1     (2019-07-20)
+              Parsing basic numbers, reals and string
+      0.2     (2019-07-20)
+              Parsing other context (array/objects)
+      0.3     (2019-07-28)
+              Parsing errors properly communicated to client
 */
 
 

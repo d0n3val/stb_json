@@ -2,3 +2,5 @@
 
 build-*
 .tup
+.exrc
+session
