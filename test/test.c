@@ -5,7 +5,7 @@
 #include "../src/stb_json.h"
 
 char buffer1[] = "{\"name\": \"  John the Great\", \"last name\" : a e o  u   , \"age\":31  , \"height\": \"  -345.1234567\", \"eye colors\": [\"green\",\"blue\"] }";
-char buffer2[] = "[0,1,2,3]";
+char buffer2[] = "[0,1,true,false,   null  ,    true , tnull, 3, 3true, false4, null 45]";
 char buffer3[] = "[      -5,-66565367     ,  +7   ,-8]";
 //char buffer4[] = "[[1,2,3],["a","b",[]], {"a":34},{}, [], 4, {}]";
 char buffer4[] = "[\"34\", [1,2,[{},{}]], 4, {},true,4,\"false\",\"null\",  null]";
@@ -107,7 +107,8 @@ int main()
             printf("Element %i: %s\n", i, stbj_get_element(&context,i)); 
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %i\n", i, stbj_readp_int(&context,i, 0)); 
+            printf("Element %i: %i Error: %s\n", 
+                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
     }
 
     {
@@ -122,7 +123,8 @@ int main()
             printf("Element %i: %s\n", i, stbj_get_element(&context,i)); 
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %i\n", i, stbj_readp_int(&context,i, 0)); 
+            printf("Element %i: %i Error: %s\n", 
+                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
     }
 
     {
@@ -134,7 +136,8 @@ int main()
         printf("buffer4 contains %i elements\n", count);
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %i\n", i, stbj_readp_int(&context,i, 0)); 
+            printf("Element %i: %i Error: %s\n", 
+                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
     }
 }
 
