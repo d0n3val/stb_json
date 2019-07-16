@@ -4,9 +4,9 @@
 #define STB_JSON_IMPLEMENTATION
 #include "../src/stb_json.h"
 
-char buffer1[] = "{\"name\": \"  John the Great\", \"last name\" : a e o  u   , \"age\":31  , \"height\": \"  -345.1234567\", \"eye colors\": [\"green\",\"blue\"] }";
+char buffer1[] = "{\"name\": \"  John the Great\", \"last name\" : a e o  u   , \"age\":1234567890123  , \"height\": \"  -345.1234567\", \"eye colors\": [\"green\",\"blue\"] }";
 char buffer2[] = "[0,1,true,false,   null  ,    true , tnull, 3, 3true, false4, null 45]";
-char buffer3[] = "[      -5,-66565367     ,  +7   ,-8]";
+char buffer3[] = "[      -5,-665.65.367     ,  +7   ,-8, 1.1, 23.45, 444444.0000, 0.12345, .3141621   ]";
 //char buffer4[] = "[[1,2,3],["a","b",[]], {"a":34},{}, [], 4, {}]";
 char buffer4[] = "[\"34\", [1,2,[{},{}]], 4, {},true,4,\"false\",\"null\",  null]";
 
@@ -123,8 +123,14 @@ int main()
             printf("Element %i: %s\n", i, stbj_get_element(&context,i)); 
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %i Error: %s\n", 
-                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
+            printf("Element %i: INT %i (%s)\n", 
+                    i, stbj_readp_int(&context,i, -1), 
+                    stbj_get_last_error(&context)); 
+
+        for(int i = 0; i < count; ++i)
+            printf("Element %i: DOUBLE %f (%s)\n", 
+                    i, stbj_readp_double(&context, i, -1.0),
+                    stbj_get_last_error(&context)); 
     }
 
     {
@@ -135,9 +141,16 @@ int main()
         int count = stbj_count_elements(&context);
         printf("buffer4 contains %i elements\n", count);
 
+        char buf[25];
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %i Error: %s\n", 
+        {
+            printf("Element INT %i: %i Error: %s\n", 
                     i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
+
+            int len = stbj_readp_string(&context, i, buf, 25, NULL);
+            printf("string() (len %i): \"%s\" Error: %s\n", 
+                    len, (len) ? buf : "<null>", stbj_get_last_error(&context)); 
+        }
     }
 }
 
