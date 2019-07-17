@@ -1,5 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define KB 1024
+#define MB 1048576
 
 #define STB_JSON_IMPLEMENTATION
 #include "../src/stb_json.h"
@@ -151,6 +155,129 @@ int main()
             printf("string() (len %i): \"%s\" Error: %s\n", 
                     len, (len) ? buf : "<null>", stbj_get_last_error(&context)); 
         }
+    }
+
+    {
+
+        // Huge JSON test ---------------------
+        char buf[3*MB];
+        char str[100];
+
+        printf("READING CANADA.JSON ---------------------\n");
+        FILE* fp = fopen("canada.json", "rb");
+        if(fp)
+        {
+            int len = fread(buf, 1, 3*MB, fp);
+            printf("canada.json opened correctly, size %i\n", len);
+            fclose(fp);
+
+            stbj_context context = stbj_create_context(buf, len);
+            int count = stbj_count_elements(&context);
+            printf("num element from root: %i\n", count);
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            stbj_read_string(&context, "type", str, 100, "error!");
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            printf("Type : %s\n", str);
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            context = stbj_read_context(&context, "features");
+            context = stbj_readp_context(&context, 0);
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            stbj_read_string(&context, "type", str, 100, "error!");
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            printf("-type : %s\n", str);
+
+            context = stbj_read_context(&context, "geometry");
+            context = stbj_read_context(&context, "coordinates");
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            count = stbj_count_elements(&context);
+            /*
+            for(int a=0; a < count; ++a)
+            {
+                stbj_context context2 = stbj_readp_context(&context, a);
+                int count2 = stbj_count_elements(&context2);
+
+                printf("Shape %i contains %i coords\n", a, count2);
+
+                for(int b=0; b < count2; ++b)
+                {
+                    stbj_context context3 = stbj_readp_context(&context2, b);
+                    printf(">>> Coord %i: %f %f\n", b, 
+                            stbj_readp_double(&context3, 0, 0.0),
+                            stbj_readp_double(&context3, 1, 0.0));
+                }
+            }*/
+        }
+        else
+            printf("Could not open canada.json\n");
+    }
+
+    {
+        // Huge JSON test 2 ---------------------
+        char buf[2*MB];
+        char str[100];
+
+        printf("READING CITM_CATALOG.JSON ---------------------\n");
+        FILE* fp = fopen("citm_catalog.json", "rb");
+        if(fp)
+        {
+            int len = fread(buf, 1, 2*MB, fp);
+            printf("citm_catalog.json opened correctly, size %i\n", len);
+            fclose(fp);
+
+            stbj_context context = stbj_create_context(buf, len);
+            int count = stbj_count_elements(&context);
+            printf("Num element from root: %i\n", count);
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            context = stbj_read_context(&context, "events");
+            count = stbj_count_elements(&context);
+            printf("Num element on events: %i\n", count);
+
+            if(stbj_is_error(&context)) 
+                printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            for(int a=0; a < count; ++a)
+            {
+                stbj_context context2 = stbj_readp_context(&context, a);
+
+                stbj_read_string(&context2, "name", str, 100, "error!");
+                printf("Event %i -----------\nName: %s\n", a, str);
+
+                stbj_read_string(&context2, "description", str, 100, "-empty-");
+                printf("Description: %s\n", str);
+
+                stbj_read_string(&context2, "logo", str, 100, "-empty-");
+                printf("Logo: %s\n", str);
+
+                printf("Id: %i\n", stbj_read_int(&context2, "id", 0));
+
+                if(stbj_is_error(&context)) 
+                    printf("ERROR: %s\n", stbj_get_last_error(&context));
+
+            }
+        }
+        else
+            printf("Could not open citm_catalog.json\n");
     }
 }
 
