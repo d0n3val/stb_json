@@ -856,7 +856,7 @@ STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
 
     stbj_context ret;
     ret.context = STBJ_ERROR;
-    ret.len = -1;
+    ret.len = 0;
     ret.buffer = 0;
     ret.cursor = 0;
     ret.error = 2;

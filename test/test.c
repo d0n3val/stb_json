@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +21,6 @@ char buffer4[] = "[\"34\", [1,2,[{},{}]], 4, {},true,4,\"false\",\"null\",  null
 int main()
 {
     printf("Test environment for STB_JSON lib:\n");
-
     {
         // Object reading test ---------------
         printf("Loading buffer: %s\n", buffer1);
@@ -71,7 +74,7 @@ int main()
             stbj_context eye_context = stbj_read_context(&context, "eye colors");
             if(eye_context.context == STBJ_ARRAY)
             {
-                int count = stbj_count_elements(&eye_context);
+                count = stbj_count_elements(&eye_context);
                 printf("tag \"eye colors\" is an array of %i elements\n", count);
 
                 for(int i = 0; i < count; ++i)
@@ -88,15 +91,6 @@ int main()
             else
                 printf("tag \"eye colors\" is not an array??\n");
         }
-
-    /*
-        char result[25];
-        int len = stbj_read(&context, "name", &result[0], 25);
-        if(len>0)
-        {
-            printf("contents of 'name': %s", result);
-        }
-    */
     }
 
     {
@@ -157,10 +151,10 @@ int main()
         }
     }
 
+    char buf[3*MB];
     {
 
         // Huge JSON test ---------------------
-        char buf[3*MB];
         char str[100];
 
         printf("READING CANADA.JSON ---------------------\n");
@@ -208,22 +202,22 @@ int main()
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
             count = stbj_count_elements(&context);
-            /*
-            for(int a=0; a < count; ++a)
-            {
-                stbj_context context2 = stbj_readp_context(&context, a);
-                int count2 = stbj_count_elements(&context2);
-
-                printf("Shape %i contains %i coords\n", a, count2);
-
-                for(int b=0; b < count2; ++b)
-                {
-                    stbj_context context3 = stbj_readp_context(&context2, b);
-                    printf(">>> Coord %i: %f %f\n", b, 
-                            stbj_readp_double(&context3, 0, 0.0),
-                            stbj_readp_double(&context3, 1, 0.0));
-                }
-            }*/
+            
+            //for(int a=0; a < count; ++a)
+            //{
+                //stbj_context context2 = stbj_readp_context(&context, a);
+                //int count2 = stbj_count_elements(&context2);
+//
+                //printf("Shape %i contains %i coords\n", a, count2);
+//
+                //for(int b=0; b < count2; ++b)
+                //{
+                    //stbj_context context3 = stbj_readp_context(&context2, b);
+                    //printf(">>> Coord %i: %f %f\n", b, 
+                            //stbj_readp_double(&context3, 0, 0.0),
+                            //stbj_readp_double(&context3, 1, 0.0));
+                //}
+            //}
         }
         else
             printf("Could not open canada.json\n");
@@ -231,7 +225,6 @@ int main()
 
     {
         // Huge JSON test 2 ---------------------
-        char buf[2*MB];
         char str[100];
 
         printf("READING CITM_CATALOG.JSON ---------------------\n");

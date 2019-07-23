@@ -14,7 +14,7 @@
 class stb_json
 {
     public:
-        stb_json(const char* buffer, int buffer_length) { context = stbj_create_context(buffer, buffer_length); }
+        stb_json(const char* buffer, unsigned int buffer_length) { context = stbj_create_context(buffer, buffer_length); }
         stb_json(const stbj_context& context) : context(context) {}
 
         // Parsing methods ------------

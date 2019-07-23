@@ -1,8 +1,12 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "../src/stb_json.hpp"
+#include "../../src/stb_json.hpp"
 
 #define KB 1024
 #define MB 1048576
@@ -12,16 +16,16 @@ int main()
 
     printf("Testing C++ wrapper to stb_json\n");
 
+    char buf[3*MB];
     {
         // Huge JSON test ---------------------
-        char buf[3*MB];
         char str[100];
 
         printf("READING CANADA.JSON ---------------------\n");
         FILE* fp = fopen("canada.json", "rb");
         if(fp)
         {
-            int len = fread(buf, 1, 3*MB, fp);
+            unsigned int len = fread(buf, 1, 3*MB, fp);
             printf("canada.json opened correctly, size %i\n", len);
             fclose(fp);
 
@@ -74,14 +78,13 @@ int main()
 
     {
         // Huge JSON test 2 ---------------------
-        char buf[2*MB];
         char str[100];
 
         printf("READING CITM_CATALOG.JSON ---------------------\n");
         FILE* fp = fopen("citm_catalog.json", "rb");
         if(fp)
         {
-            int len = fread(buf, 1, 2*MB, fp);
+            unsigned int len = fread(buf, 1, 2*MB, fp);
             printf("citm_catalog.json opened correctly, size %i\n", len);
             fclose(fp);
 

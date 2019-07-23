@@ -4,3 +4,6 @@ build-*
 .tup
 .exrc
 session
+.vs
+Debug
+Release
