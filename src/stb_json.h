@@ -147,14 +147,23 @@ STBJDEF const char* stbj_get_last_error();
 
 // stbj_context structure is our basic context used by all json buffers
 //
+enum context_type { STBJ_OBJECT, STBJ_ARRAY, STBJ_ERROR };
+
 typedef struct
 {
-    enum { STBJ_OBJECT, STBJ_ARRAY, STBJ_ERROR } context;
+    enum context_type context;
 	unsigned int len;
 	const char* buffer;
     const char* cursor;
     char error;
 } stbj_context;
+
+STBJDEF int stbj_is_error(const stbj_context* context)
+{
+    STBJ_ASSERT(context);
+
+    return(context->error);
+}
 
 STBJDEF const char* stbj_get_last_error(const stbj_context* context)
 {
@@ -194,7 +203,7 @@ STBJDEF stbj_context stbj_create_context(const char *buffer, unsigned int len)
     { 
         switch(*context.cursor)
         {
-            case ' ': break;
+            case ' ': case '\n': case '\r': break;
             case '[': context.context = STBJ_ARRAY; context.error = 0; return context;
             case '{': context.context = STBJ_OBJECT; context.error = 0; return context;
             default: return context;
@@ -280,6 +289,11 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
         if(result == index)
         {
             context->error = 0;
+
+            // if object just consume chars until ':'
+            if(context->context == STBJ_OBJECT)
+                while(max_len-- > 0 && *cursor && *cursor++ != ':');
+
             return cursor;
         }
 
@@ -290,7 +304,7 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
             switch(*cursor)
             {
                 case '[': case '{': stack[++stack_index] = *cursor; break;
-                case ']': case '}': if(!between_comas && *cursor == delimiter) return NULL; break;
+                case ']': case '}': if(!between_comas && *cursor == delimiter) return 0; break;
                 case ',': result += !between_comas; break;
                 case '"': between_comas = !between_comas; break;
             }
@@ -303,17 +317,17 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
                 case '[': case '{': stack[++stack_index] = *cursor; break;
                 case ']': 
                     if(stack[stack_index] == '[') --stack_index; 
-                    else { context->error = 4; return NULL; }
+                    else { context->error = 4; return 0; }
                 break;
                 case '}': 
                     if(stack[stack_index] == '{') --stack_index;
-                    else { context->error = 5; return NULL; }
+                    else { context->error = 5; return 0; }
                 break;
             }
         }
     }
 
-    return NULL;
+    return 0;
 }
 
 STBJDEF int stbj_find_element(stbj_context* context, const char* name)
@@ -408,7 +422,9 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
     int sign = 1;
     int result = 0;
     int have_result = 0;
-    char* c_special = "rue\0ull\0alse";
+    int past_dot = 0;
+    char special[] = "rue\0ull\0alse";
+    char* c_special = &special[0];
 
     while(max_len-- > 0 && *cursor && state != finish) 
     {
@@ -419,8 +435,9 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
                 // Parsing done before encountering any value of meaning -----------------
                 switch(*cursor)
                 {
-                    case ' ': break;
-                    case '"': if(between_comas++) state = finish; break; // leave if found 2 commas (empty)
+                    case ' ': case '\n': case '\r': break;
+                    case '.': --cursor; have_result = 1; state = at_num_value; break;
+                    case '"': if(between_comas++) state = finish; break;
                     case '-': sign = -1; // fall to next option
                     case '+': state = at_num_value; have_result = 1; break;
                     case '0': case '1': case '2': case '3': case '4':
@@ -436,12 +453,13 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
 
             case at_num_value:
             {
-                // Parsing on a number ----------------------------------------------------
+                // Parsing on a number ---------------------------------------------------
                 switch(*cursor)
                 {
+                    case '.': if(past_dot++) state = error; break;
                     case '0': case '1': case '2': case '3': case '4':
                     case '5': case '6': case '7': case '8': case '9':
-                        result = (10 * result) + (*cursor - '0'); break;
+                        if(!past_dot) result = (10 * result) + (*cursor - '0'); break;
                     default: --cursor; state = after_value; break;
                 }
             } break;
@@ -472,7 +490,7 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
             {
                 switch(*cursor)
                 {
-                    case ' ': break;
+                    case ' ': case '\n': case '\r': break;
                     case '"': state = (between_comas) ? after_value : error; break;
                     case ',': state = finish; break;
                     case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
@@ -516,56 +534,117 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
     STBJ_ASSERT(index >= 0);
 
     const char* cursor = stbj_get_element(context, index);
+
+    if(!cursor)
+        return default_value; // error num already set by get_element()
+
+    enum parse_states
+    {
+        before_value,
+        at_num_value,       // 123
+        at_special_value,   // true/false/null
+        after_value,
+        finish,
+        error
+    } state = before_value;
+
+    context->error = 0;
+    unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
+    int between_comas = 0;
     double sign = 1.0;
     double result = 0.0;
     int have_result = 0;
     double decimal = 1.0;
     int past_dot = 0;
+    char special[] = "rue\0ull\0alse";
+    char* c_special = &special[0];
 
-    if(cursor != NULL)
+    while(max_len-- > 0 && *cursor && state != finish) 
     {
-        context->error = 0;
-        unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
-        int between_comas = 0;
-        int finish = 0;
-
-        // if object just consume chars until ':'
-        if(context->error == STBJ_OBJECT)
-            while(max_len-- > 0 && *cursor && *cursor++ != ':');
-
-        // iterate chars, embedding the logic for atof()
-        while(max_len-- > 0 && *cursor && !finish) 
-        { 
-            switch(*cursor)
+        switch(state)
+        {
+            case before_value:
             {
-                case ' ': break;
-                case '"': 
-                    if(between_comas++) { context->error = 7; finish = 1; }
+                // Parsing done before encountering any value of meaning -----------------
+                switch(*cursor)
+                {
+                    case ' ': case '\n': case '\r': break;
+                    case '"': if(between_comas++) state = finish; break;
+                    case '-': sign = -1.0; // fall to next option
+                    case '+': state = at_num_value; have_result = 1; break;
+                    case '.': past_dot = 1; state = at_num_value; have_result = 1; break;
+                    case '0': case '1': case '2': case '3': case '4':
+                    case '5': case '6': case '7': case '8': case '9': 
+                        result = *cursor - '0'; state = at_num_value; have_result = 1; break;
+                    case 't': state = at_special_value; have_result = 1; result = 1; break;
+                    case 'f': c_special += 8; state = at_special_value; have_result = 1;  break;
+                    case 'n': c_special += 4; state = at_special_value; have_result = 1;  break;
+                    default: --cursor; state = after_value; break;
+                }
+
+            } break;
+
+            case at_num_value:
+            {
+                // Parsing on a number ---------------------------------------------------
+                switch(*cursor)
+                {
+                    case '.': if(past_dot++) state = error; break;
+                    case '0': case '1': case '2': case '3': case '4':
+                    case '5': case '6': case '7': case '8': case '9':
+                        result = (10 * result) + (*cursor - '0');
+                        if(past_dot) decimal *= 10.0;
                     break;
-                case '+': 
-                    if(have_result) { context->error = 7; finish = 1; }
-                    break;
-                case '-': 
-                    if(have_result || sign == -1.0) { context->error = 7; finish = 1; }
-                    else sign = -1.0; 
-                    break;
-                case '.':
-                    if(!past_dot) past_dot = 1;
-                    else { context->error = 7; finish = 1; }
-                    break;
-                case '0': case '1': case '2': case '3': case '4':
-                case '5': case '6': case '7': case '8': case '9': 
-                    have_result = 1;
-                    result = (10 * result) + (*cursor - '0');
-                    if(past_dot) decimal *= 10.0;
-                    break;
-                default: 
-                    context->error = 7; 
-                        finish = 1;
-                    break;
-            }
-            ++cursor;
+                    default: --cursor; state = after_value; break;
+                }
+            } break;
+
+            case at_special_value:
+            {
+                // Parsing on a special token (true/false/null) --------------------------
+                switch(*cursor)
+                {
+                    case 'r': case 'u':
+                    case 'a': case 's':
+                        if(*cursor != *c_special++) state = error; break;
+                    case 'e':
+                        state = (*cursor != *c_special) ? error : after_value; break;
+                    case 'l':
+                    {
+                        if(*cursor != *c_special++)
+                            state = error;
+                        else 
+                            if(*c_special == 0) state = after_value;
+                    } break;
+                    default: state = error; break;
+                }
+            } break;
+
+            // We are finish parsing, wait until we end the element ----------------------
+            case after_value:
+            {
+                switch(*cursor)
+                {
+                    case ' ': case '\n': case '\r': break;
+                    case '"': state = (between_comas) ? after_value : error; break;
+                    case ',': state = finish; break;
+                    case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
+                    case '}': state = (context->context == STBJ_OBJECT) ? finish : error; break;
+                    default: state = error; break;
+                }
+            } break;
+
+            case finish: case error: default: STBJ_ASSERT(0 && "this should never happen!"); break;
         }
+
+        // corner case where the error case is not evaluated at the end of max_len ...
+        if(state == error)
+        {
+            context->error = 7; 
+            return default_value;
+        }
+        
+        ++cursor;
     }
 
     return (have_result) ? ((result/decimal) * sign) : default_value; 
@@ -582,6 +661,7 @@ STBJDEF double stbj_read_double(stbj_context* context, const char* name, double 
     return (pos >= 0) ? stbj_readp_double(context, pos, default_value) : default_value;
 }
 
+
 STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, int buffer_size, const char* default_value)
 {
     STBJ_ASSERT(context);
@@ -593,50 +673,118 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
 
     const char* cursor = stbj_get_element(context, index);
     int buffer_index = 0;
-    int consuming_spaces = 1;
-    int between_comas = 0;
 
-    if(cursor != NULL)
+    if(!cursor)
     {
-        context->error = 0;
-        unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
-        int finish = 0;
+        // TODO check if we can avoid replicating this code
+        if(default_value != 0)
+            while((buffer[buffer_index++] = *default_value++) && buffer_index < (buffer_size-1));
+        buffer[buffer_index] = 0;
+        return buffer_index;
+    }
 
-        // if object just consume chars until ':'
-        if(context->context == STBJ_OBJECT)
-            while(max_len-- > 0 && *cursor && *cursor++ != ':');
+    enum parse_states
+    {
+        before_value,
+        at_string_value,    // hellot world
+        at_special_value,   // true/false/null
+        after_value,
+        finish,
+        error
+    } state = before_value;
 
-        // iterate chars
-        while(max_len-- > 0 && *cursor && buffer_index < (buffer_size-1) && !finish) 
-        { 
-            switch(*cursor)
+    context->error = 0;
+    unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
+    int between_comas = 0;
+    char special[] = "ull";
+    char* c_special = &special[0];
+
+    while(max_len-- > 0 && *cursor && state != finish) 
+    {
+        switch(state)
+        {
+            case before_value:
             {
-                case ' ': 
-                    if(between_comas || !consuming_spaces) buffer[buffer_index++] = *cursor; 
-                    break;
-                case '"': 
-                    if(between_comas++ || !consuming_spaces) { context->error = 8; finish = 1; }
-                    break;
-                case '[': case '{': case ']': case '}': case ',':
-                    if(!between_comas) {context->error = 8; finish = 1; }
-                    break;
-                default: 
-                    consuming_spaces = 0;
-                    buffer[buffer_index++] = *cursor;
-                    break;
-            }
-            ++cursor;
+                // Parsing done before encountering any value of meaning -----------------
+                switch(*cursor)
+                {
+                    case ' ': case '\n': case '\r': break;
+                    case '"': between_comas = 1; state = at_string_value; break;
+                    case 'n': state = at_special_value; break;
+                    case '[': case '{': case ']': case '}': case ',': 
+                              --cursor; state = after_value; break;
+                    default: --cursor; state = at_string_value; break;
+                }
+
+            } break;
+
+            case at_string_value:
+            {
+                // Parsing on a string ---------------------------------------------------
+                switch(*cursor)
+                {
+                    case '"': --cursor; state = after_value; break;
+                    case '[': case '{': case ']': case '}': case ',': 
+                        if(!between_comas) { --cursor; state = after_value; } break;
+                    default: 
+                        if(buffer_index < buffer_size-1) 
+                            buffer[buffer_index++] = *cursor; 
+                        else
+                            state = finish;
+                        break;
+                }
+            } break;
+
+            case at_special_value:
+            {
+                // Parsing on a special token (null) --------------------------
+                switch(*cursor)
+                {
+                    case 'u':
+                        if(*cursor != *c_special++) state = error; break;
+                    case 'l':
+                    {
+                        if(*cursor != *c_special++)
+                            state = error;
+                        else 
+                            if(*c_special == 0) state = after_value;
+                    } break;
+                    default: state = error; break;
+                }
+            } break;
+
+            // We are finish parsing, wait until we end the element ----------------------
+            case after_value:
+            {
+                switch(*cursor)
+                {
+                    case ' ': case '\n': case '\r': break;
+                    case '"': state = (between_comas) ? after_value : error; break;
+                    case ',': state = finish; break;
+                    case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
+                    case '}': state = (context->context == STBJ_OBJECT) ? finish : error; break;
+                    default: state = error; break;
+                }
+            } break;
+
+            case finish: case error: default: STBJ_ASSERT(0 && "this should never happen!"); break;
         }
+
+        // corner case where the error case is not evaluated at the end of max_len ...
+        if(state == error)
+        {
+            context->error = 8; 
+            return 0;
+        }
+        
+        ++cursor;
     }
 
     // if we did not wrote anything, strcpy default value into buffer
-    if(buffer_index == 0 && default_value != NULL)
+    if(buffer_index == 0 && default_value != 0)
         while((buffer[buffer_index++] = *default_value++) && buffer_index < (buffer_size-1));
-    else if(!between_comas)
-        while(buffer[buffer_index-1] == ' ' && buffer_index-- > 0); // trim last spaces if no commas used
 
     buffer[buffer_index] = 0;
-
     return buffer_index; 
 }
 
@@ -667,31 +815,25 @@ STBJDEF stbj_context stbj_readp_context(stbj_context* context, int index)
     STBJ_ASSERT(context->context != STBJ_ERROR);
     STBJ_ASSERT(index >= 0);
 
-    const char* cursor = stbj_get_element(context, index);
-
     stbj_context ret;
     ret.context = STBJ_ERROR;
     ret.len = context->len;
     ret.buffer = context->buffer;
-    ret.cursor = context->buffer;
+    ret.cursor = stbj_get_element(context, index);
     ret.error = 1;
 
-    if(cursor != NULL)
+    if(ret.cursor != 0)
     {
         unsigned int max_len = context->len - (unsigned int)(ret.cursor - context->buffer);
-
-        // if object just consume chars until ':'
-        if(context->context == STBJ_OBJECT)
-            while(max_len-- > 0 && *ret.cursor && *ret.cursor++ != ':');
 
         // iterate chars
         while(max_len-- > 0 && *ret.cursor) 
         { 
-            switch(*cursor)
+            switch(*ret.cursor)
             {
-                case ' ': break;
-                case '[': ret.context = STBJ_ARRAY; ret.error = 0; break;
-                case '{': ret.context = STBJ_OBJECT; ret.error = 0; break;
+                case ' ': case '\n': case '\r': break;
+                case '[': ret.context = STBJ_ARRAY; ret.error = 0; return ret;
+                case '{': ret.context = STBJ_OBJECT; ret.error = 0; return ret;
                 default: return ret;
             }
             ++ret.cursor;
@@ -715,8 +857,8 @@ STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
     stbj_context ret;
     ret.context = STBJ_ERROR;
     ret.len = -1;
-    ret.buffer = NULL;
-    ret.cursor = NULL;
+    ret.buffer = 0;
+    ret.cursor = 0;
     ret.error = 2;
 
     return ret;
@@ -726,12 +868,16 @@ STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
 
 /*
    revision history:
-      0.1     (2019-07-20)
+      0.1     (2019-06-20)
               Parsing basic numbers, reals and string
-      0.2     (2019-07-20)
+      0.2     (2019-06-20)
               Parsing other context (array/objects)
-      0.3     (2019-07-28)
+      0.3     (2019-06-28)
               Parsing errors properly communicated to client
+      0.4     (2019-07-16)
+              Management of special values true/false/null
+      0.5     (2019-07-17)
+              Handling of newline and carriage return chars
 */
 
 
