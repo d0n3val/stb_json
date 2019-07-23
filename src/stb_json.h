@@ -1,5 +1,5 @@
-/* stb_json - v0.2 - public domain json parser - http://d0n3val.github.org
-                                  no warranty implied; use at your own risk
+/* stb_json - v0.6 - public domain json parser - http://d0n3val.github.org
+   no warranty implied; use at your own risk
 
    Do this:
       #define STB_JSON_IMPLEMENTATION
@@ -13,7 +13,7 @@
    #include "stb_json.h"
 
    You can #define STBI_ASSERT(x) before the #include to avoid using assert.h.
-   This lib has zero dependencies, even with standard libraries. It does not
+   This lib has zero dependencies, even against standard libraries. It does not
    allocate any memory in the heap.
 
    QUICK NOTES:
@@ -21,17 +21,9 @@
 
    Full documentation under "DOCUMENTATION" below.
 
+LICENSE AND REVISION HISTORY:
 
-LICENSE
-
-  See end of file for license information.
-
-RECENT REVISION HISTORY:
-
-      0.1  (2019-06-15) Basic parsing
-      0.2  (2019-06-27) Parse of other arrays / objects
-
-   See end of file for full revision history.
+  See end of file
 
  ============================    Contributors    =========================
 
@@ -52,16 +44,56 @@ RECENT REVISION HISTORY:
 // Limitations:
 //    - no reading from files, only buffers
 //    - no writing of json files
+//    - not intended for strict/formal parsing
 //
-// Basic usage: 
-//    stbj_cursor* cursor = stbj_load(buffer, buffer_size);
-//    ...
-//    stbj_free(cursor);
+// Basic usage example: ---
+//
+//	char buffer0[] = "{\"name\": \"John\", \"married\": true, \"height\": 181.55, \"eye colors\": [3,3] }";
+//
+//	stbj_cursor cursor = stbj_load_buffer(buffer0, strlen(buffer0) + 1);
+//
+//	if (stbj_any_error(&cursor))
+//	{
+//		printf("Error loading JSON buffer %s", stbj_get_last_error(&cursor));
+//	}
+//	else
+//	{
+//		printf("Found %i values at current cursor\n", stbj_count_values(&cursor));
+//
+//		char buf[10];
+//		stbj_read_string_name(&cursor, "name", buf, 10, "not found");
+//		printf("Name: %s\n", buf);
+//
+//		if (stbj_read_int_name(&cursor, "married", 0))
+//			printf("... is married\n");
+//		else
+//			printf("... is not married\n");
+//
+//		printf("Height is: %0.3f\n", stbj_read_double_name(&cursor, "height", 0.0));
+//		printf("Weight is: %0.3f\n", stbj_read_double_name(&cursor, "weight", 0.0)); // does not exist
+//
+//		stbj_cursor cursor_eyes = stbj_move_cursor_name(&cursor, "eye colors");
+//		int left_eye = stbj_read_int_index(&cursor_eyes, 0, -1);
+//		int right_eye = stbj_read_int_index(&cursor_eyes, 1, -1);
+//
+//		printf("Eyes: %i - %i\n", left_eye, right_eye);
+//	}
+//
+// Ouput from example: ---
+//
+// Found 4 values at current cursor
+// Name: John
+// ... is married
+// Height is: 181.550
+// Weight is: 0.000
+// Eyes: 3 - 3
 //
 // TODO ======================================================================
 //
-// Understant null / true / false
-// Benchmark the lib against others
+// Cannot parse exponents for doubles
+// Cannot parse hex, ignored right now (\uFFFF)
+// Unicode support
+// Benchmark the lib against other json parsers
 //
 // ===========================================================================
 //
@@ -105,14 +137,38 @@ extern "C" {
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// PRIMARY API - open and release a buffer
+// STBJ_CURSOR holds data to parse a buffer from a specific object/array
 //
+enum cursor_type { STBJ_OBJECT, STBJ_ARRAY, STBJ_ERROR };
 
-/*
-STBJDEF void*       stbj_load_from_memory(const char *buffer, int len);
-STBJDEF void        stbj_free(void *retval_from_stbi_load);
-STBJDEF const char* stbj_get_last_error();
-*/
+typedef struct
+{
+    enum cursor_type type;
+	unsigned int len;
+	const char* buffer;
+    const char* cursor;
+    char error;
+} stbj_cursor;
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// PRIMARY API
+//
+STBJDEF int			stbj_any_error(const stbj_cursor* context);
+STBJDEF const char* stbj_get_last_error(const stbj_cursor* context);
+STBJDEF stbj_cursor stbj_load_buffer(const char *buffer, unsigned int len);
+STBJDEF int			stbj_count_values(stbj_cursor* context);
+STBJDEF stbj_cursor stbj_move_cursor_index(stbj_cursor* context, int index);
+STBJDEF stbj_cursor stbj_move_cursor_name(stbj_cursor* context, const char* name);
+STBJDEF const char* stbj_find_index(stbj_cursor* context, int index);
+STBJDEF int			stbj_find_name(stbj_cursor* context, const char* name);
+
+STBJDEF int			stbj_read_int_index(stbj_cursor* context, int index, int default_value);
+STBJDEF int			stbj_read_int_name(stbj_cursor* context, const char* name, int default_value);
+STBJDEF double		stbj_read_double_index(stbj_cursor* context, int index, double default_value);
+STBJDEF double		stbj_read_double_name(stbj_cursor* context, const char* name, double default_value);
+STBJDEF int			stbj_read_string_index(stbj_cursor* context, int index, char* buffer, int buffer_size, const char* default_value);
+STBJDEF int			stbj_read_string_name(stbj_cursor* context, const char* name, char* buffer, int buffer_size, const char* default_value);
 
 #ifdef __cplusplus
 }
@@ -143,29 +199,16 @@ STBJDEF const char* stbj_get_last_error();
 
 ///////////////////////////////////////////////
 //
-//  stbj_context struct and related functions
-
-// stbj_context structure is our basic context used by all json buffers
+//  Error Handling functions
 //
-enum context_type { STBJ_OBJECT, STBJ_ARRAY, STBJ_ERROR };
-
-typedef struct
-{
-    enum context_type context;
-	unsigned int len;
-	const char* buffer;
-    const char* cursor;
-    char error;
-} stbj_context;
-
-STBJDEF int stbj_is_error(const stbj_context* context)
+STBJDEF int stbj_any_error(const stbj_cursor* context)
 {
     STBJ_ASSERT(context);
 
     return(context->error);
 }
 
-STBJDEF const char* stbj_get_last_error(const stbj_context* context)
+STBJDEF const char* stbj_get_last_error(const stbj_cursor* context)
 {
     STBJ_ASSERT(context);
 
@@ -180,21 +223,28 @@ STBJDEF const char* stbj_get_last_error(const stbj_context* context)
         case 6: return "Context must be of type Object";
         case 7: return "JSON error parsing string to number";
         case 8: return "JSON error parsing to string";
-        default: return "Unknown error";
     }
+
+    return "Unknown error";
 }
 
-// NOTE: it is up to the application to keep buffer as valid and readable memory
-STBJDEF stbj_context stbj_create_context(const char *buffer, unsigned int len)
+///////////////////////////////////////////////////////////
+//
+//  Loading buffers and moving cursors around it
+//
+
+// Creates a cursor to parse on that buffer. 
+// WARNING: Application should to keep the memory available for reading.
+STBJDEF stbj_cursor stbj_load_buffer(const char *buffer, unsigned int len)
 {
     STBJ_ASSERT(buffer);
     STBJ_ASSERT(len > 0);
 
-    stbj_context context;
+    stbj_cursor context;
     context.len = len;
     context.buffer = buffer;
     context.cursor = buffer;
-    context.context = STBJ_ERROR;
+    context.type = STBJ_ERROR;
     context.error = 1;
 
     unsigned int max_len = context.len - (unsigned int)(context.cursor - context.buffer);
@@ -203,9 +253,9 @@ STBJDEF stbj_context stbj_create_context(const char *buffer, unsigned int len)
     { 
         switch(*context.cursor)
         {
-            case ' ': case '\n': case '\r': break;
-            case '[': context.context = STBJ_ARRAY; context.error = 0; return context;
-            case '{': context.context = STBJ_OBJECT; context.error = 0; return context;
+			case ' ': case '\n': case '\r': case '\t': break;
+            case '[': context.type = STBJ_ARRAY; context.error = 0; return context;
+            case '{': context.type = STBJ_OBJECT; context.error = 0; return context;
             default: return context;
         }
         ++context.cursor;
@@ -214,18 +264,19 @@ STBJDEF stbj_context stbj_create_context(const char *buffer, unsigned int len)
     return context;
 }
 
-STBJDEF int stbj_count_elements(stbj_context* context)
+// Count the values at the current cursor context. Many nested arrays/objects will count as one.
+STBJDEF int stbj_count_values(stbj_cursor* context)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
 
     context->error = 0;
     int result = 0;
     int between_comas = 0;
     char stack[256];
     int stack_index = -1;
-    char delimiter = (context->context == STBJ_ARRAY) ? ']' : '}';
+    char delimiter = (context->type == STBJ_ARRAY) ? ']' : '}';
 
     const char* cursor = context->cursor;
     unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
@@ -266,12 +317,70 @@ STBJDEF int stbj_count_elements(stbj_context* context)
     return -1;
 }
 
-// Return a pointer to the place in the buffer that a certain element exist
-STBJDEF const char* stbj_get_element(stbj_context* context, int index)
+// Returns a new cursor to begin parsing at index. Use it to parse inside an array or object
+STBJDEF stbj_cursor stbj_move_cursor_index(stbj_cursor* context, int index)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
+    STBJ_ASSERT(index >= 0);
+
+    stbj_cursor ret;
+    ret.type = STBJ_ERROR;
+    ret.len = context->len;
+    ret.buffer = context->buffer;
+    ret.cursor = stbj_find_index(context, index);
+    ret.error = 1;
+
+    if(ret.cursor != 0)
+    {
+        unsigned int max_len = context->len - (unsigned int)(ret.cursor - context->buffer);
+
+        // iterate chars
+        while(max_len-- > 0 && *ret.cursor) 
+        { 
+            switch(*ret.cursor)
+            {
+				case ' ': case '\n': case '\r': case '\t': break;
+                case '[': ret.type = STBJ_ARRAY; ret.error = 0; return ret;
+                case '{': ret.type = STBJ_OBJECT; ret.error = 0; return ret;
+                default: return ret;
+            }
+            ++ret.cursor;
+        }
+    }
+
+    return ret; 
+}
+
+// Returns a new cursor to begin parsing at _name_. Use it to parse inside an array or object
+STBJDEF stbj_cursor stbj_move_cursor_name(stbj_cursor* context, const char* name)
+{
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
+    STBJ_ASSERT(name);
+
+    int pos = stbj_find_name(context, name);
+    if (pos >= 0) 
+        return stbj_move_cursor_index(context, pos);
+
+    stbj_cursor ret;
+    ret.type = STBJ_ERROR;
+    ret.len = 0;
+    ret.buffer = 0;
+    ret.cursor = 0;
+    ret.error = 2;
+
+    return ret;
+}
+
+// This function is for internal use only: Return a pointer to the value at index
+STBJDEF const char* stbj_find_index(stbj_cursor* context, int index)
+{
+    STBJ_ASSERT(context);
+    STBJ_ASSERT(context->cursor);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(index >= 0);
 
     context->error = 3;
@@ -279,7 +388,7 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
     int between_comas = 0;
     char stack[256];
     int stack_index = -1;
-    char delimiter = (context->context == STBJ_ARRAY) ? ']' : '}';
+    char delimiter = (context->type == STBJ_ARRAY) ? ']' : '}';
 
     const char* cursor = context->cursor;
     unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
@@ -291,7 +400,7 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
             context->error = 0;
 
             // if object just consume chars until ':'
-            if(context->context == STBJ_OBJECT)
+            if(context->type == STBJ_OBJECT)
                 while(max_len-- > 0 && *cursor && *cursor++ != ':');
 
             return cursor;
@@ -330,15 +439,16 @@ STBJDEF const char* stbj_get_element(stbj_context* context, int index)
     return 0;
 }
 
-STBJDEF int stbj_find_element(stbj_context* context, const char* name)
+// This function is for internal use only: Returns a pointer at the value after _name_
+STBJDEF int stbj_find_name(stbj_cursor* context, const char* name)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(name);
 
     context->error = 6;
-    if(context->context == STBJ_ARRAY)
+    if(context->type == STBJ_ARRAY)
         return -1;
 
     context->error = 0;
@@ -394,14 +504,20 @@ STBJDEF int stbj_find_element(stbj_context* context, const char* name)
     return -1;
 }
 
-STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
+///////////////////////////////////////////////
+//
+//  Core parsing functions
+//
+
+// Try parsing an integer value at index. If unable, return default_value.
+STBJDEF int stbj_read_int_index(stbj_cursor* context, int index, int default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(index >= 0);
 
-    const char* cursor = stbj_get_element(context, index);
+    const char* cursor = stbj_find_index(context, index);
 
     if(!cursor)
         return default_value; // error num already set by get_element()
@@ -435,7 +551,7 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
                 // Parsing done before encountering any value of meaning -----------------
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '.': --cursor; have_result = 1; state = at_num_value; break;
                     case '"': if(between_comas++) state = finish; break;
                     case '-': sign = -1; // fall to next option
@@ -490,11 +606,11 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
             {
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '"': state = (between_comas) ? after_value : error; break;
                     case ',': state = finish; break;
-                    case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
-                    case '}': state = (context->context == STBJ_OBJECT) ? finish : error; break;
+                    case ']': state = (context->type == STBJ_ARRAY) ? finish : error; break;
+                    case '}': state = (context->type == STBJ_OBJECT) ? finish : error; break;
                     default: state = error; break;
                 }
             } break;
@@ -515,25 +631,27 @@ STBJDEF int stbj_readp_int(stbj_context* context, int index, int default_value)
     return (have_result) ? result * sign : default_value;
 }
 
-STBJDEF int stbj_read_int(stbj_context* context, const char* name, int default_value)
+// Try parsing an integer value at _name_. If unable, return default_value.
+STBJDEF int stbj_read_int_name(stbj_cursor* context, const char* name, int default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(name);
 
-    int pos = stbj_find_element(context, name);
-    return (pos >= 0) ? stbj_readp_int(context, pos, default_value) : default_value;
+    int pos = stbj_find_name(context, name);
+    return (pos >= 0) ? stbj_read_int_index(context, pos, default_value) : default_value;
 }
 
-STBJDEF double stbj_readp_double(stbj_context* context, int index, double default_value)
+// Try parsing a double value at index. If unable, return default_value.
+STBJDEF double stbj_read_double_index(stbj_cursor* context, int index, double default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(index >= 0);
 
-    const char* cursor = stbj_get_element(context, index);
+    const char* cursor = stbj_find_index(context, index);
 
     if(!cursor)
         return default_value; // error num already set by get_element()
@@ -568,7 +686,7 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
                 // Parsing done before encountering any value of meaning -----------------
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '"': if(between_comas++) state = finish; break;
                     case '-': sign = -1.0; // fall to next option
                     case '+': state = at_num_value; have_result = 1; break;
@@ -625,11 +743,11 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
             {
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '"': state = (between_comas) ? after_value : error; break;
                     case ',': state = finish; break;
-                    case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
-                    case '}': state = (context->context == STBJ_OBJECT) ? finish : error; break;
+                    case ']': state = (context->type == STBJ_ARRAY) ? finish : error; break;
+                    case '}': state = (context->type == STBJ_OBJECT) ? finish : error; break;
                     default: state = error; break;
                 }
             } break;
@@ -650,28 +768,29 @@ STBJDEF double stbj_readp_double(stbj_context* context, int index, double defaul
     return (have_result) ? ((result/decimal) * sign) : default_value; 
 }
 
-STBJDEF double stbj_read_double(stbj_context* context, const char* name, double default_value)
+// Try parsing a double value at _name_. If unable, return default_value.
+STBJDEF double stbj_read_double_name(stbj_cursor* context, const char* name, double default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(name);
 
-    int pos = stbj_find_element(context, name);
-    return (pos >= 0) ? stbj_readp_double(context, pos, default_value) : default_value;
+    int pos = stbj_find_name(context, name);
+    return (pos >= 0) ? stbj_read_double_index(context, pos, default_value) : default_value;
 }
 
-
-STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, int buffer_size, const char* default_value)
+// Try parsing a string at index and fill provided buffer. If unable, fill the buffer with default_value.
+STBJDEF int stbj_read_string_index(stbj_cursor* context, int index, char* buffer, int buffer_size, const char* default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(index >= 0);
     STBJ_ASSERT(buffer);
     STBJ_ASSERT(buffer_size > 0);
 
-    const char* cursor = stbj_get_element(context, index);
+    const char* cursor = stbj_find_index(context, index);
     int buffer_index = 0;
 
     if(!cursor)
@@ -688,6 +807,8 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
         before_value,
         at_string_value,    // hellot world
         at_special_value,   // true/false/null
+		at_scape_character,	// \n \r \b ...
+		at_hex_value,		// \uFAFA
         after_value,
         finish,
         error
@@ -696,6 +817,8 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
     context->error = 0;
     unsigned int max_len = context->len - (unsigned int)(cursor - context->buffer);
     int between_comas = 0;
+	int hex = 0;
+	int hex_count = 0;
     char special[] = "ull";
     char* c_special = &special[0];
 
@@ -708,7 +831,7 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
                 // Parsing done before encountering any value of meaning -----------------
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '"': between_comas = 1; state = at_string_value; break;
                     case 'n': state = at_special_value; break;
                     case '[': case '{': case ']': case '}': case ',': 
@@ -723,6 +846,7 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
                 // Parsing on a string ---------------------------------------------------
                 switch(*cursor)
                 {
+					case '\\': state = at_scape_character;
                     case '"': --cursor; state = after_value; break;
                     case '[': case '{': case ']': case '}': case ',': 
                         if(!between_comas) { --cursor; state = after_value; } break;
@@ -733,11 +857,69 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
                             state = finish;
                         break;
                 }
+
             } break;
+
+			case at_scape_character:
+			{
+				// Parsing scape characters like \n or \" -------------------------------------------
+				char c = 0;
+
+				switch (*cursor)
+				{
+					case '\\': c = '\\'; break;
+					case '/': c = '/'; break;
+					case '"': c = '"'; break;
+					case 'b': c = '\b';  break;
+					case 'n': c = '\n';  break;
+					case 'r': c = '\r';  break;
+					case 't': c = '\t';  break;
+					case 'f': c = '\f';  break;
+					case 'u': state = at_hex_value; break;
+					default: state = finish;  break;
+				}
+
+				if (state == at_scape_character && buffer_index < buffer_size - 1)
+				{
+					buffer[buffer_index++] = c;
+					state = at_string_value;
+				}
+			} break;
+
+			case at_hex_value:
+			{
+				// Parsing scape characters like \uFFFF ---------------------------------------------
+				char byte = 0;
+
+				switch (*cursor)
+				{
+                    case '0': case '1': case '2': case '3': case '4':
+                    case '5': case '6': case '7': case '8': case '9':
+						byte = *cursor - '0'; break;
+
+					case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
+						byte = 10 + (*cursor - 'a'); break;
+
+					case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
+						byte = 10 + (*cursor - 'A'); break;
+
+					default: state = finish;  break;
+				}
+
+				hex = (hex << 4) | (byte & 0xF);
+
+				if (state != finish && ++hex_count >= 4)
+				{
+					//buffer[buffer_index++] = hex; // TODO: unicode
+					hex_count = 0;
+					state = at_string_value;
+				}
+
+			} break;
 
             case at_special_value:
             {
-                // Parsing on a special token (null) --------------------------
+                // Parsing on a special token (null) ------------------------------------
                 switch(*cursor)
                 {
                     case 'u':
@@ -758,11 +940,11 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
             {
                 switch(*cursor)
                 {
-                    case ' ': case '\n': case '\r': break;
+					case ' ': case '\n': case '\r': case '\t': break;
                     case '"': state = (between_comas) ? after_value : error; break;
                     case ',': state = finish; break;
-                    case ']': state = (context->context == STBJ_ARRAY) ? finish : error; break;
-                    case '}': state = (context->context == STBJ_OBJECT) ? finish : error; break;
+                    case ']': state = (context->type == STBJ_ARRAY) ? finish : error; break;
+                    case '}': state = (context->type == STBJ_OBJECT) ? finish : error; break;
                     default: state = error; break;
                 }
             } break;
@@ -788,18 +970,19 @@ STBJDEF int stbj_readp_string(stbj_context* context, int index, char* buffer, in
     return buffer_index; 
 }
 
-STBJDEF int stbj_read_string(stbj_context* context, const char* name, char* buffer, int buffer_size, const char* default_value)
+// Try parsing a string at _name_ and fill provided buffer. If unable, fill the buffer with default_value.
+STBJDEF int stbj_read_string_name(stbj_cursor* context, const char* name, char* buffer, int buffer_size, const char* default_value)
 {
     STBJ_ASSERT(context);
     STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
+    STBJ_ASSERT(context->type != STBJ_ERROR);
     STBJ_ASSERT(name);
     STBJ_ASSERT(buffer);
     STBJ_ASSERT(buffer_size > 0);
 
-    int pos = stbj_find_element(context, name);
+    int pos = stbj_find_name(context, name);
     if (pos >= 0) 
-        return stbj_readp_string(context, pos, buffer,buffer_size, default_value);
+        return stbj_read_string_index(context, pos, buffer,buffer_size, default_value);
     else
     {
         int buffer_index = 0;
@@ -807,63 +990,6 @@ STBJDEF int stbj_read_string(stbj_context* context, const char* name, char* buff
     }
     return 0;
 }
-
-STBJDEF stbj_context stbj_readp_context(stbj_context* context, int index)
-{
-    STBJ_ASSERT(context);
-    STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
-    STBJ_ASSERT(index >= 0);
-
-    stbj_context ret;
-    ret.context = STBJ_ERROR;
-    ret.len = context->len;
-    ret.buffer = context->buffer;
-    ret.cursor = stbj_get_element(context, index);
-    ret.error = 1;
-
-    if(ret.cursor != 0)
-    {
-        unsigned int max_len = context->len - (unsigned int)(ret.cursor - context->buffer);
-
-        // iterate chars
-        while(max_len-- > 0 && *ret.cursor) 
-        { 
-            switch(*ret.cursor)
-            {
-                case ' ': case '\n': case '\r': break;
-                case '[': ret.context = STBJ_ARRAY; ret.error = 0; return ret;
-                case '{': ret.context = STBJ_OBJECT; ret.error = 0; return ret;
-                default: return ret;
-            }
-            ++ret.cursor;
-        }
-    }
-
-    return ret; 
-}
-
-STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
-{
-    STBJ_ASSERT(context);
-    STBJ_ASSERT(context->cursor);
-    STBJ_ASSERT(context->context != STBJ_ERROR);
-    STBJ_ASSERT(name);
-
-    int pos = stbj_find_element(context, name);
-    if (pos >= 0) 
-        return stbj_readp_context(context, pos);
-
-    stbj_context ret;
-    ret.context = STBJ_ERROR;
-    ret.len = 0;
-    ret.buffer = 0;
-    ret.cursor = 0;
-    ret.error = 2;
-
-    return ret;
-}
-
 #endif // STB_JSON_IMPLEMENTATION
 
 /*
@@ -878,6 +1004,8 @@ STBJDEF stbj_context stbj_read_context(stbj_context* context, const char* name)
               Management of special values true/false/null
       0.5     (2019-07-17)
               Handling of newline and carriage return chars
+      0.6     (2019-07-23)
+              Parsing scape characters, ignore hex values
 */
 
 

@@ -1,3 +1,58 @@
-STB-JSON is a header only json parser that aims for a simple interface and integration in the spirit of the STB header only utils
+STB_JSON is a header only json parser that aims for a simple interface and integration in the spirit of the STB header only utils
 
+Just include "stb_json.h" in your code and you should be good to go
+Alternative, a C++ wrapper class is provided "stb_json.hpp"
 
+Pros:
+- Small ( <1K lines code)
+- Pure C code without any dependency
+- Does not allocate any memory at all
+- Simple, just 12 functions
+
+Cons:
+- Not useful for strict parsing
+- Cannot read exponents in floating point numbers
+- Cannot read hex in strings
+- Does not open files or holds memory for you
+
+Example of use:
+
+	char buffer0[] = "{\"name\": \"John\", \"married\": true, \"height\": 181.55, \"eye colors\": [3,3] }";
+
+	stbj_cursor cursor = stbj_load_buffer(buffer0, strlen(buffer0) + 1);
+
+	if (stbj_any_error(&cursor))
+	{
+		printf("Error loading JSON buffer %s", stbj_get_last_error(&cursor));
+	}
+	else
+	{
+		printf("Found %i values at current cursor\n", stbj_count_values(&cursor));
+
+		char buf[10];
+		stbj_read_string_name(&cursor, "name", buf, 10, "not found");
+		printf("Name: %s\n", buf);
+
+		if (stbj_read_int_name(&cursor, "married", 0))
+			printf("... is married\n");
+		else
+			printf("... is not married\n");
+
+		printf("Height is: %0.3f\n", stbj_read_double_name(&cursor, "height", 0.0));
+		printf("Weight is: %0.3f\n", stbj_read_double_name(&cursor, "weight", 0.0)); // does not exist
+
+		stbj_cursor cursor_eyes = stbj_move_cursor_name(&cursor, "eye colors");
+		int left_eye = stbj_read_int_index(&cursor_eyes, 0, -1);
+		int right_eye = stbj_read_int_index(&cursor_eyes, 1, -1);
+
+		printf("Eyes: %i - %i\n", left_eye, right_eye);
+	}
+
+Output:
+
+Found 4 values at current cursor
+Name: John
+... is married
+Height is: 181.550
+Weight is: 0.000
+Eyes: 3 - 3

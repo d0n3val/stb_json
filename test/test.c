@@ -12,6 +12,8 @@
 #define STB_JSON_IMPLEMENTATION
 #include "../src/stb_json.h"
 
+char buffer0[] = "{\"name\": \"John\", \"married\": true, \"height\": 181.55, \"eye colors\": [3,3] }";
+
 char buffer1[] = "{\"name\": \"  John the Great\", \"last name\" : a e o  u   , \"age\":1234567890123  , \"height\": \"  -345.1234567\", \"eye colors\": [\"green\",\"blue\"] }";
 char buffer2[] = "[0,1,true,false,   null  ,    true , tnull, 3, 3true, false4, null 45]";
 char buffer3[] = "[      -5,-665.65.367     ,  +7   ,-8, 1.1, 23.45, 444444.0000, 0.12345, .3141621   ]";
@@ -21,15 +23,48 @@ char buffer4[] = "[\"34\", [1,2,[{},{}]], 4, {},true,4,\"false\",\"null\",  null
 int main()
 {
     printf("Test environment for STB_JSON lib:\n");
+	{
+		// Object reading test ---------------
+		stbj_cursor cursor = stbj_load_buffer(buffer0, strlen(buffer0) + 1);
+
+		if (stbj_any_error(&cursor))
+		{
+			printf("Error loading JSON buffer %s", stbj_get_last_error(&cursor));
+		}
+		else
+		{
+			printf("Found %i values at current cursor\n", stbj_count_values(&cursor));
+
+			char buf[10];
+			stbj_read_string_name(&cursor, "name", buf, 10, "not found");
+			printf("Name: %s\n", buf);
+
+			if (stbj_read_int_name(&cursor, "married", 0))
+				printf("... is married\n");
+			else
+				printf("... is not married\n");
+
+			printf("Height is: %0.3f\n", stbj_read_double_name(&cursor, "height", 0.0));
+			printf("Weight is: %0.3f\n", stbj_read_double_name(&cursor, "weight", 0.0)); // does not exist
+
+			stbj_cursor cursor_eyes = stbj_move_cursor_name(&cursor, "eye colors");
+			int left_eye = stbj_read_int_index(&cursor_eyes, 0, -1);
+			int right_eye = stbj_read_int_index(&cursor_eyes, 1, -1);
+
+			printf("Eyes: %i - %i\n", left_eye, right_eye);
+		}
+
+	}
+
     {
         // Object reading test ---------------
         printf("Loading buffer: %s\n", buffer1);
-        stbj_context context = stbj_create_context(buffer1, strlen(buffer1)+1);
+        stbj_cursor context = stbj_load_buffer(buffer1, strlen(buffer1)+1);
 
-        stbj_context c = stbj_read_context(&context, "haha");
+        stbj_cursor c = stbj_move_cursor_name(&context, "haha");
         printf("error: %s\n", stbj_get_last_error(&c));
 
-        int count = stbj_count_elements(&context);
+        int count = stbj_count_values(&context);
 
         printf("buffer1 contains %i elements\n", count);
 
@@ -38,53 +73,53 @@ int main()
         for(int i = 0; i < count; ++i)
         {
             printf("Element %i -------------------\n", i);
-            printf("Element: %s\n", stbj_get_element(&context,i)); 
-            printf("int(): %i\n", stbj_readp_int(&context,i, 0)); 
-            printf("float(): %f\n", stbj_readp_double(&context,i, 0)); 
+            printf("Element: %s\n", stbj_find_index(&context,i)); 
+            printf("int(): %i\n", stbj_read_int_index(&context,i, 0)); 
+            printf("float(): %f\n", stbj_read_double_index(&context,i, 0)); 
 
-            int len = stbj_readp_string(&context, i, buf, 10, NULL);
+            int len = stbj_read_string_index(&context, i, buf, 10, NULL);
             printf("string() (len %i): \"%s\"\n", len, buf); 
         }
 
-        stbj_read_string(&context, "name", buf, 10, "error");
+        stbj_read_string_name(&context, "name", buf, 10, "error");
         printf("tag \"name\" found at %i is \"%s\"\n", 
-                stbj_find_element(&context, "name"), 
+                stbj_find_name(&context, "name"), 
                 buf);
 
-        stbj_read_string(&context, "last name", buf, 10, "error");
+        stbj_read_string_name(&context, "last name", buf, 10, "error");
         printf("tag \"last name\" found at %i is \"%s\"\n", 
-                stbj_find_element(&context, "last name"),
+                stbj_find_name(&context, "last name"),
                 buf);
 
         printf("tag \"age\" found at %i is %i\n", 
-                stbj_find_element(&context, "age"),
-                stbj_read_int(&context, "age", 0));
+                stbj_find_name(&context, "age"),
+                stbj_read_int_name(&context, "age", 0));
 
         printf("tag \"height\" found at %i is %f\n", 
-                stbj_find_element(&context, "height"),
-                stbj_read_double(&context, "height", 0.0));
+                stbj_find_name(&context, "height"),
+                stbj_read_double_name(&context, "height", 0.0));
 
         printf("tag \"error\" found at %i\n", 
-                stbj_find_element(&context, "error"));
+                stbj_find_name(&context, "error"));
 
         printf("tag \"eye colors\" found at %i ...\n",
-                stbj_find_element(&context, "eye colors"));
+                stbj_find_name(&context, "eye colors"));
 
         {
-            stbj_context eye_context = stbj_read_context(&context, "eye colors");
-            if(eye_context.context == STBJ_ARRAY)
+            stbj_cursor eye_context = stbj_move_cursor_name(&context, "eye colors");
+            if(eye_context.type == STBJ_ARRAY)
             {
-                count = stbj_count_elements(&eye_context);
+                count = stbj_count_values(&eye_context);
                 printf("tag \"eye colors\" is an array of %i elements\n", count);
 
                 for(int i = 0; i < count; ++i)
                 {
                     printf("Element %i -------------------\n", i);
-                    printf("Element: %s\n", stbj_get_element(&eye_context,i)); 
-                    printf("int(): %i\n", stbj_readp_int(&eye_context,i, 0)); 
-                    printf("float(): %f\n", stbj_readp_double(&eye_context,i, 0)); 
+                    printf("Element: %s\n", stbj_find_index(&eye_context,i)); 
+                    printf("int(): %i\n", stbj_read_int_index(&eye_context,i, 0)); 
+                    printf("float(): %f\n", stbj_read_double_index(&eye_context,i, 0)); 
 
-                    int len = stbj_readp_string(&eye_context, i, buf, 10, NULL);
+                    int len = stbj_read_string_index(&eye_context, i, buf, 10, NULL);
                     printf("string() (len %i): \"%s\"\n", len, buf); 
                 }
             }
@@ -96,56 +131,56 @@ int main()
     {
         // Array reading test -----------------
         printf("Loading buffer: %s\n", buffer2);
-        stbj_context context = stbj_create_context(buffer2, strlen(buffer2)+1);
+        stbj_cursor context = stbj_load_buffer(buffer2, strlen(buffer2)+1);
 
-        int count = stbj_count_elements(&context);
+        int count = stbj_count_values(&context);
         printf("buffer2 contains %i elements\n", count);
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %s\n", i, stbj_get_element(&context,i)); 
+            printf("Element %i: %s\n", i, stbj_find_index(&context,i)); 
 
         for(int i = 0; i < count; ++i)
             printf("Element %i: %i Error: %s\n", 
-                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
+                    i, stbj_read_int_index(&context,i, -1), stbj_get_last_error(&context)); 
     }
 
     {
         // Array reading test -----------------
         printf("Loading buffer: %s\n", buffer3);
-        stbj_context context = stbj_create_context(buffer3, strlen(buffer3)+1);
+        stbj_cursor context = stbj_load_buffer(buffer3, strlen(buffer3)+1);
 
-        int count = stbj_count_elements(&context);
+        int count = stbj_count_values(&context);
         printf("buffer3 contains %i elements\n", count);
 
         for(int i = 0; i < count; ++i)
-            printf("Element %i: %s\n", i, stbj_get_element(&context,i)); 
+            printf("Element %i: %s\n", i, stbj_find_index(&context,i)); 
 
         for(int i = 0; i < count; ++i)
             printf("Element %i: INT %i (%s)\n", 
-                    i, stbj_readp_int(&context,i, -1), 
+                    i, stbj_read_int_index(&context,i, -1), 
                     stbj_get_last_error(&context)); 
 
         for(int i = 0; i < count; ++i)
             printf("Element %i: DOUBLE %f (%s)\n", 
-                    i, stbj_readp_double(&context, i, -1.0),
+                    i, stbj_read_double_index(&context, i, -1.0),
                     stbj_get_last_error(&context)); 
     }
 
     {
         // Array reading test -----------------
         printf("Loading buffer: %s\n", buffer4);
-        stbj_context context = stbj_create_context(buffer4, strlen(buffer4)+1);
+        stbj_cursor context = stbj_load_buffer(buffer4, strlen(buffer4)+1);
 
-        int count = stbj_count_elements(&context);
+        int count = stbj_count_values(&context);
         printf("buffer4 contains %i elements\n", count);
 
         char buf[25];
         for(int i = 0; i < count; ++i)
         {
             printf("Element INT %i: %i Error: %s\n", 
-                    i, stbj_readp_int(&context,i, -1), stbj_get_last_error(&context)); 
+                    i, stbj_read_int_index(&context,i, -1), stbj_get_last_error(&context)); 
 
-            int len = stbj_readp_string(&context, i, buf, 25, NULL);
+            int len = stbj_read_string_index(&context, i, buf, 25, NULL);
             printf("string() (len %i): \"%s\" Error: %s\n", 
                     len, (len) ? buf : "<null>", stbj_get_last_error(&context)); 
         }
@@ -165,57 +200,57 @@ int main()
             printf("canada.json opened correctly, size %i\n", len);
             fclose(fp);
 
-            stbj_context context = stbj_create_context(buf, len);
-            int count = stbj_count_elements(&context);
+            stbj_cursor context = stbj_load_buffer(buf, len);
+            int count = stbj_count_values(&context);
             printf("num element from root: %i\n", count);
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
-            stbj_read_string(&context, "type", str, 100, "error!");
+            stbj_read_string_name(&context, "type", str, 100, "error!");
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
             printf("Type : %s\n", str);
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
-            context = stbj_read_context(&context, "features");
-            context = stbj_readp_context(&context, 0);
+            context = stbj_move_cursor_name(&context, "features");
+            context = stbj_move_cursor_index(&context, 0);
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
-            stbj_read_string(&context, "type", str, 100, "error!");
+            stbj_read_string_name(&context, "type", str, 100, "error!");
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
             printf("-type : %s\n", str);
 
-            context = stbj_read_context(&context, "geometry");
-            context = stbj_read_context(&context, "coordinates");
+            context = stbj_move_cursor_name(&context, "geometry");
+            context = stbj_move_cursor_name(&context, "coordinates");
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
-            count = stbj_count_elements(&context);
+            count = stbj_count_values(&context);
             
             //for(int a=0; a < count; ++a)
             //{
-                //stbj_context context2 = stbj_readp_context(&context, a);
+                //stbj_context context2 = stbj_move_cursor_index(&context, a);
                 //int count2 = stbj_count_elements(&context2);
 //
                 //printf("Shape %i contains %i coords\n", a, count2);
 //
                 //for(int b=0; b < count2; ++b)
                 //{
-                    //stbj_context context3 = stbj_readp_context(&context2, b);
+                    //stbj_context context3 = stbj_move_cursor_index(&context2, b);
                     //printf(">>> Coord %i: %f %f\n", b, 
-                            //stbj_readp_double(&context3, 0, 0.0),
-                            //stbj_readp_double(&context3, 1, 0.0));
+                            //stbj_read_double_index(&context3, 0, 0.0),
+                            //stbj_read_double_index(&context3, 1, 0.0));
                 //}
             //}
         }
@@ -235,36 +270,36 @@ int main()
             printf("citm_catalog.json opened correctly, size %i\n", len);
             fclose(fp);
 
-            stbj_context context = stbj_create_context(buf, len);
-            int count = stbj_count_elements(&context);
+            stbj_cursor context = stbj_load_buffer(buf, len);
+            int count = stbj_count_values(&context);
             printf("Num element from root: %i\n", count);
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
-            context = stbj_read_context(&context, "events");
-            count = stbj_count_elements(&context);
+            context = stbj_move_cursor_name(&context, "events");
+            count = stbj_count_values(&context);
             printf("Num element on events: %i\n", count);
 
-            if(stbj_is_error(&context)) 
+            if(stbj_any_error(&context)) 
                 printf("ERROR: %s\n", stbj_get_last_error(&context));
 
             for(int a=0; a < count; ++a)
             {
-                stbj_context context2 = stbj_readp_context(&context, a);
+                stbj_cursor context2 = stbj_move_cursor_index(&context, a);
 
-                stbj_read_string(&context2, "name", str, 100, "error!");
+                stbj_read_string_name(&context2, "name", str, 100, "error!");
                 printf("Event %i -----------\nName: %s\n", a, str);
 
-                stbj_read_string(&context2, "description", str, 100, "-empty-");
+                stbj_read_string_name(&context2, "description", str, 100, "-empty-");
                 printf("Description: %s\n", str);
 
-                stbj_read_string(&context2, "logo", str, 100, "-empty-");
+                stbj_read_string_name(&context2, "logo", str, 100, "-empty-");
                 printf("Logo: %s\n", str);
 
-                printf("Id: %i\n", stbj_read_int(&context2, "id", 0));
+                printf("Id: %i\n", stbj_read_int_name(&context2, "id", 0));
 
-                if(stbj_is_error(&context)) 
+                if(stbj_any_error(&context)) 
                     printf("ERROR: %s\n", stbj_get_last_error(&context));
 
             }
