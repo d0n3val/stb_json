@@ -14,6 +14,7 @@ Cons:
 - Cannot read exponents in floating point numbers
 - Cannot read hex in strings
 - Does not open files or holds memory for you
+- Does not write json files, only read
 
 Example of use:
 
